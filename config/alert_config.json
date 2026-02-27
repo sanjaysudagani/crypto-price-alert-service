@@ -1,0 +1,17 @@
+{
+  "interval_seconds": 60,
+
+  "coins": ["bitcoin", "ethereum", "solana", "binancecoin", "ripple"],
+
+  "rules": {
+    "rapid_movement": {
+      "enabled": true,
+      "threshold": 5
+    }
+  },
+
+  "daily_summary": {
+    "enabled": true,
+    "hour_utc": 12
+  }
+}
