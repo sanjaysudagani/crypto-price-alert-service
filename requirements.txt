@@ -1,2 +1,5 @@
-requests
+fastapi
+uvicorn
+prometheus-client
 python-dotenv
+requests

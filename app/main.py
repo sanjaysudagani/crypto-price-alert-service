@@ -1,9 +1,14 @@
 import time
 import json
 import logging
-import os
+import threading
 from datetime import datetime
+
 from dotenv import load_dotenv
+from fastapi import FastAPI, Response
+import uvicorn
+
+from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 from app.logger import setup_logger
 from app.price_fetcher import fetch_prices
@@ -11,86 +16,108 @@ from app.rule_engine import evaluate_rules
 from app.notifier import send_alert
 
 
+app = FastAPI()
+
+# ==============================
+# Service State
+# ==============================
+
+service_state = {
+    "last_run": None,
+    "last_success": None,
+    "last_error": None,
+}
+
+# ==============================
+# Prometheus Metrics
+# ==============================
+
+alerts_counter = Counter(
+    "crypto_alerts_sent_total",
+    "Total number of alerts sent"
+)
+
+last_run_gauge = Gauge(
+    "crypto_last_run_timestamp",
+    "Last execution timestamp (unix)"
+)
+
+
+# ==============================
+# Config Loader
+# ==============================
+
 def load_config():
     with open("config/alert_config.json", "r") as f:
         return json.load(f)
 
 
-def send_daily_summary(prices):
-    """
-    Sends a formatted daily summary message.
-    """
-    if not prices:
-        logging.warning("No prices available for daily summary.")
-        return
+# ==============================
+# Background Alert Loop
+# ==============================
 
-    message_lines = ["📊 Daily Crypto Summary (UTC)\n"]
-
-    for coin, data in prices.items():
-        name = data.get("name")
-        price = data.get("current_price")
-        change = data.get("price_change_24h")
-
-        message_lines.append(
-            f"{name}: ${price} | 24h Change: {change:.2f}%"
-        )
-
-    summary_message = "\n".join(message_lines)
-    logging.info("Sending daily summary.")
-    send_alert(summary_message)
-
-
-def main():
+def alert_loop():
     load_dotenv()
     setup_logger()
 
-    logging.info("Starting Crypto Alert Service...")
+    logging.info("Starting Crypto Alert Background Loop...")
 
-    last_summary_date = None  # Track last summary sent
+    config = load_config()
+    coins = config["coins"]
+    rules = config["rules"]
+    interval = config.get("interval_seconds", 60)
 
-    try:
-        config = load_config()
+    while True:
+        try:
+            now = datetime.utcnow().isoformat()
+            service_state["last_run"] = now
+            last_run_gauge.set(time.time())
 
-        coins = config["coins"]
-        rules = config["rules"]
-        interval = config.get("interval_seconds", 60)
-
-        rapid_threshold = rules["rapid_movement"]["threshold"]
-        summary_enabled = config.get("daily_summary", {}).get("enabled", False)
-        summary_hour = config.get("daily_summary", {}).get("hour_utc", 12)
-
-        while True:
             prices = fetch_prices(coins)
             logging.info(f"Fetched prices: {prices}")
 
-            # 1️⃣ Rapid movement alerts
-            alerts = evaluate_rules(prices, rapid_threshold)
+            alerts = evaluate_rules(prices, rules)
             logging.info(f"Generated alerts: {alerts}")
 
             for alert in alerts:
                 logging.info(f"Sending alert: {alert}")
                 send_alert(alert)
+                alerts_counter.inc()
 
-            # 2️⃣ Daily summary logic
-            if summary_enabled:
-                now = datetime.utcnow()
+            service_state["last_success"] = datetime.utcnow().isoformat()
 
-                if now.hour == summary_hour:
-                    if last_summary_date != now.date():
-                        send_daily_summary(prices)
-                        last_summary_date = now.date()
+        except Exception as e:
+            logging.error(f"Error in alert loop: {e}")
+            service_state["last_error"] = str(e)
 
-            time.sleep(interval)
+        time.sleep(interval)
 
-    except KeyboardInterrupt:
-        logging.info("Service interrupted by user.")
 
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}")
+# ==============================
+# API Endpoints
+# ==============================
 
-    finally:
-        logging.info("Crypto Alert Service stopped.")
+@app.get("/health")
+def health():
+    return {
+        "status": "running",
+        "last_run": service_state["last_run"],
+        "last_success": service_state["last_success"],
+        "last_error": service_state["last_error"],
+    }
 
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+# ==============================
+# Entry Point
+# ==============================
 
 if __name__ == "__main__":
-    main()
+    thread = threading.Thread(target=alert_loop, daemon=True)
+    thread.start()
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
