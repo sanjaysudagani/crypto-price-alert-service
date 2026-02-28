@@ -11,7 +11,7 @@ A production-style crypto monitoring microservice that fetches live cryptocurren
 - FastAPI health endpoint
 - Prometheus metrics endpoint
 - Dockerized deployment
-- GitHub Actions CI pipeline to build and push Docker images
+- GitHub Actions CI pipeline to build Docker images
 
 ## Architecture
 
@@ -102,7 +102,7 @@ docker run -d \
 
 ### Health Check
 
-Open in browser or curl:
+Open in browser or use curl:
 
 ```bash
 http://localhost:8000/health
@@ -123,16 +123,9 @@ Metrics include:
 
 ## CI/CD
 
-GitHub Actions automatically:
+GitHub Actions automatically builds the Docker image on every push to `main`.
 
-- builds the Docker image
-- pushes the image to Docker Hub on every push to `main`
-
-Docker Hub image:
-
-```text
-sudaganisanjay/crypto-price-alert-service
-```
+The recommended usage for contributors is to build the image locally from the repository source.
 
 ## Project Structure
 
