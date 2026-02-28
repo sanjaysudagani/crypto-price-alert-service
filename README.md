@@ -22,10 +22,10 @@ The service runs two components inside one container:
    - Fetches prices from CoinGecko
    - Evaluates alert rules
    - Sends Telegram alerts
-   - Updates service state and metrics
+   - Updates internal service state and metrics
 
 2. **FastAPI HTTP Server**
-   - `/health` for health checks
+   - `/health` for service health checks
    - `/metrics` for Prometheus metrics
 
 ## Endpoints
@@ -40,6 +40,23 @@ Create a local `.env` file (this file is not committed):
 ```env
 TELEGRAM_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
+```
+
+## Example Configuration
+
+Current alert configuration:
+
+```json
+{
+  "interval_seconds": 60,
+  "coins": ["bitcoin", "ethereum", "solana", "binancecoin", "ripple"],
+  "rules": {
+    "percentage_change_24h": {
+      "enabled": true,
+      "threshold": 5
+    }
+  }
+}
 ```
 
 ## Run Locally
@@ -85,17 +102,21 @@ docker run -d \
 
 ### Health Check
 
+Open in browser or curl:
+
 ```bash
 http://localhost:8000/health
 ```
 
 ### Metrics
 
+Prometheus-compatible metrics endpoint:
+
 ```bash
 http://localhost:8000/metrics
 ```
 
-Prometheus metrics include:
+Metrics include:
 - Python process metrics
 - alert counter
 - last run timestamp
